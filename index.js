@@ -1,72 +1,81 @@
-function applyEffect(input, output, effect, callback) {
-    let cmd = ffmpeg(input);
+import TelegramBot from "node-telegram-bot-api";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "ffmpeg-static";
+import fs from "fs";
+import express from "express";
+import dotenv from "dotenv";
+dotenv.config();
 
-    switch (effect) {
+// ------------------------------------------------
+// Create temp folder (Render compatible)
+// ------------------------------------------------
+if (!fs.existsSync("temp")) {
+    fs.mkdirSync("temp");
+}
 
-        // 1. Natural Male → Female (already realistic)
-        case "male_to_female":
-            cmd.audioFilters(
-                "asetrate=44100*1.32,aresample=44100,atempo=1.02, " +
-                "equalizer=f=300:t=h:w=200:g=3, " +
-                "equalizer=f=3000:t=h:w=200:g=4"
-            );
-            break;
+// ------------------------------------------------
+// FFmpeg Path
+// ------------------------------------------------
+ffmpeg.setFfmpegPath(ffmpegInstaller);
 
-        // 2. Soft Woman (gentle, smooth, feminine)
-        case "female_soft2":
-            cmd.audioFilters(
-                "asetrate=44100*1.18,aresample=44100,atempo=1.04, " +
-                "equalizer=f=250:t=h:w=200:g=4, " +
-                "equalizer=f=4500:t=h:w=1000:g=3, " +
-                "acompressor=threshold=-20dB:ratio=3:attack=20:release=200"
-            );
-            break;
+// ------------------------------------------------
+// Telegram Bot Init
+// ------------------------------------------------
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-        // 3. Confident Woman (strong, bold, female radio voice)
-        case "female_confident":
-            cmd.audioFilters(
-                "asetrate=44100*1.10,aresample=44100,atempo=1.02, " +
-                "equalizer=f=180:t=h:w=200:g=5, " +
-                "equalizer=f=3500:t=h:w=800:g=6, " +
-                "acompressor=threshold=-18dB:ratio=4:attack=10:release=250"
-            );
-            break;
+bot.on("message", (msg) => {
+    if (msg.voice || msg.audio) {
+        sendMenu(msg.chat.id, msg.message_id);
+    }
+});
 
-        // 4. Bright Young Girl (teenage, higher pitch, energetic)
-        case "female_young":
-            cmd.audioFilters(
-                "asetrate=44100*1.40,aresample=44100,atempo=1.07, " +
-                "equalizer=f=500:t=h:w=300:g=5, " +
-                "equalizer=f=6000:t=h:w=2000:g=7"
-            );
-            break;
+// ------------------------------------------------
+// Menu UI
+// ------------------------------------------------
+function sendMenu(chatId, messageId) {
+    bot.sendMessage(chatId, "🎧 Choose a voice style:", {
+        reply_to_message_id: messageId,
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🔄 Male → Female (Natural)", callback_data: "male_to_female" }],
 
-        // 5. Mature Woman (deep feminine, elegant)
-        case "female_mature2":
-            cmd.audioFilters(
-                "asetrate=44100*1.05,aresample=44100,atempo=1.00, " +
-                "equalizer=f=250:t=h:w=200:g=3, " +
-                "equalizer=f=2000:t=h:w=500:g=2, " +
-                "equalizer=f=8000:t=h:w=1000:g=3"
-            );
-            break;
+                [{ text: "Soft Woman", callback_data: "female_soft2" }],
+                [{ text: "Confident Woman", callback_data: "female_confident" }],
+                [{ text: "Young Girl", callback_data: "female_young" }],
+                [{ text: "Mature Woman", callback_data: "female_mature2" }],
+                [{ text: "Warm Lady", callback_data: "female_warm2" }],
+            ],
+        },
+    });
+}
 
-        // 6. Warm Lady (emotional, smooth, warm tone)
-        case "female_warm2":
-            cmd.audioFilters(
-                "asetrate=44100*1.15,aresample=44100,atempo=1.03, " +
-                "equalizer=f=300:t=h:w=250:g=4, " +
-                "equalizer=f=4000:t=h:w=900:g=5, " +
-                "acompressor=threshold=-22dB:ratio=2.5:attack=15:release=180"
-            );
-            break;
+// ------------------------------------------------
+// Callback Query Handler
+// ------------------------------------------------
+bot.on("callback_query", async (query) => {
+    const chatId = query.message.chat.id;
+    const replied = query.message.reply_to_message;
 
-        default:
-            console.log("Unknown effect:", effect);
+    if (!replied || (!replied.voice && !replied.audio)) {
+        return bot.sendMessage(chatId, "❗ Please reply to a voice message.");
     }
 
-    cmd.output(output)
-        .on("end", callback)
-        .on("error", err => console.error("FFmpeg error:", err))
-        .run();
-}
+    const fileId = replied.voice ? replied.voice.file_id : replied.audio.file_id;
+
+    try {
+        const fileLink = await bot.getFileLink(fileId);
+
+        const inputPath = `temp/input_${Date.now()}.ogg`;
+        const outputPath = `temp/output_${Date.now()}.ogg`;
+
+        await downloadFile(fileLink, inputPath);
+
+        applyEffect(inputPath, outputPath, query.data, async () => {
+            await bot.sendAudio(chatId, outputPath);
+
+            fs.unlinkSync(inputPath);
+            fs.unlinkSync(outputPath);
+        });
+
+    } catch (err) {
+        console.error(err);
