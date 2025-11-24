@@ -4,6 +4,7 @@ import ffmpegInstaller from "ffmpeg-static";
 import fs from "fs";
 import express from "express";
 import dotenv from "dotenv";
+import fetch from "node-fetch"; // required for keep-alive
 dotenv.config();
 
 // ------------------------------------------------
@@ -30,7 +31,7 @@ bot.on("message", (msg) => {
 });
 
 // ------------------------------------------------
-// Menu UI (Only 1 effect as requested)
+// Menu UI
 // ------------------------------------------------
 function sendMenu(chatId, messageId) {
     bot.sendMessage(chatId, "🎧 Choose a voice style:", {
@@ -44,7 +45,7 @@ function sendMenu(chatId, messageId) {
 }
 
 // ------------------------------------------------
-// Callback Query Handler
+// Callback Handler
 // ------------------------------------------------
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
@@ -87,7 +88,7 @@ async function downloadFile(url, path) {
 }
 
 // ------------------------------------------------
-// APPLY EFFECT (Only 1 effect)
+// APPLY EFFECT
 // ------------------------------------------------
 function applyEffect(input, output, effect, callback) {
     let cmd = ffmpeg(input);
@@ -103,7 +104,16 @@ function applyEffect(input, output, effect, callback) {
 }
 
 // ------------------------------------------------
-// Render Keep-alive Server
+// Render Keep-Alive Ping (Runs every 4 minutes)
+// ------------------------------------------------
+setInterval(() => {
+    fetch("https://YOUR_RENDER_URL.onrender.com")
+        .then(() => console.log("🔄 Keep-alive ping sent"))
+        .catch(() => {});
+}, 240000); // 4 mins
+
+// ------------------------------------------------
+– Render Web Server
 // ------------------------------------------------
 const app = express();
 app.get("/", (req, res) => res.send("Bot is running..."));
